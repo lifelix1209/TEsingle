@@ -1,6 +1,22 @@
+import gzip
+import re
 import shlex
 
 import pysam
+
+
+def normalize_barcode(barcode):
+    """Remove the 10x GEM suffix without changing the nucleotide barcode."""
+    return re.sub(r'-\d+$', '', barcode.strip())
+
+
+def read_cell_barcodes(filename):
+    opener = gzip.open if filename.endswith('.gz') else open
+    with opener(filename, 'rt') as stream:
+        barcodes = {normalize_barcode(line.split()[0]) for line in stream if line.strip()}
+    if not barcodes:
+        raise ValueError('Cell barcode list is empty: ' + filename)
+    return barcodes
 
 
 def validate_alignment(filename, allow_truncated=False):
@@ -32,7 +48,7 @@ def annotation_direction(stranded, read_is_reverse):
         return ['.', '+', '-'][algn_dir * direction]
 
 
-def read_in_alignment(filename, geneIdx, teIdx, stranded):
+def read_in_alignment(filename, geneIdx, teIdx, stranded, cell_barcodes=None):
     # given .sam or .bam file, returns dictionary of {barcodes:UMIs} and {UMIs:{reads:{alignments}}}
     # alignments are in format [chromosome, [0-indexed blocks in tuples], direction]
 
@@ -60,6 +76,10 @@ def read_in_alignment(filename, geneIdx, teIdx, stranded):
                 err_reads += 1
 
             if not rbc:
+                continue
+
+            rbc = normalize_barcode(rbc)
+            if cell_barcodes is not None and rbc not in cell_barcodes:
                 continue
 
             try:
