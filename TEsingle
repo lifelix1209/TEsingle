@@ -28,6 +28,7 @@ import gzip
 import collections
 import gc
 import tempfile
+import json
 
 from TEtools.TEindex import *
 from TEtools.GeneIndex import *
@@ -161,6 +162,7 @@ def main():
         print('zero cell barcodes passed the minimum threshold.')
         sys.exit(1)
     print('initially {} cell barcodes detected, with {} passing the minimum threshold'.format(init_cbc, post_cbc), flush=True)
+    retained_raw_umis = sum(len(cell) for cell in full_dict.values())
 
     annots = geneIdx.getFeatures() + teIdx.getElements()
     gencnt = len(geneIdx.getFeatures())
@@ -174,6 +176,8 @@ def main():
 
     print('count_cells starting at:  ', time.ctime(), flush=True)
     sparse_tbl, cbcs, collapsed_summary = count_cells(full_dict, gene_blank, te_blank, args.numproc)
+    unrounded_gene_sum = float(sparse_tbl[:, :gencnt].sum())
+    unrounded_te_sum = float(sparse_tbl[:, gencnt:].sum())
     sparse_tbl.data = np.rint(sparse_tbl.data)
     sparse_tbl = sparse_tbl.astype(int)
     sparse_tbl.eliminate_zeros()
@@ -186,6 +190,17 @@ def main():
         fil_cbcs.write('\n'.join(cbcs)+'\n')
 
     sio.mmwrite("{}.mtx".format(args.prefix), sparse_tbl)
+    summary = {
+        'cells': len(cbcs), 'retained_raw_UMIs': retained_raw_umis,
+        'gene_UMI_before_rounding': unrounded_gene_sum, 'TE_UMI_before_rounding': unrounded_te_sum,
+        'gene_UMI': int(sparse_tbl[:gencnt, :].sum()), 'TE_UMI': int(sparse_tbl[gencnt:, :].sum()),
+        'UMI_categories': dict(zip(UMI_CATEGORIES, collapsed_summary.tolist())),
+        'called_cell_list': args.cell_barcodes, 'raw_UMI_cutoff': args.cutoff,
+        'diagnostic_truncated_BAM_override': args.allow_truncated_bam,
+    }
+    with open('{}.summary.json'.format(args.prefix), 'w') as stream:
+        json.dump(summary, stream, indent=2)
+        stream.write('\n')
 
     print('run complete\n', flush=True)
 
