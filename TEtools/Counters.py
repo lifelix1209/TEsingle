@@ -6,6 +6,9 @@ import time
 from TEtools.CellGrapher import *
 from TEtools.EM import *
 
+UMI_CATEGORIES = ['unmoored_TE', 'unmoored_gene_TE', 'unmoored_gene',
+                  'anchored_TE', 'anchored_gene_TE', 'anchored_gene', 'unannotated']
+
 
 def normalizelil(sparse_vect):
     tmp_sum = np.sum(sparse_vect.data[0])  # has to take 0th index for lil structure
@@ -18,14 +21,14 @@ def normalizelil(sparse_vect):
 
 def rearranger(subg_list):
     transc_dict = {'gene_only': [], 'tes': [], 'anch_both': []}
-    cat_sum = np.zeros(6)
+    cat_sum = np.zeros(len(UMI_CATEGORIES))
 
     for subg_assgn in subg_list:
         scnt = subg_assgn['cnt']
         cat_sum += subg_assgn['cat']
-        if np.sum(subg_assgn['cat']*[0,0,1,0,0,1]) > 0:  # gene-only, unmoored or anchored
+        if np.sum(subg_assgn['cat']*[0,0,1,0,0,1,1]) > 0:  # gene-only, unmoored or anchored; unannotated adds zero
             transc_dict['gene_only'].append(scnt)
-        elif np.sum(subg_assgn['cat']*[0,0,0,0,1,0]) > 0:  # anchored, gene+TE
+        elif np.sum(subg_assgn['cat']*[0,0,0,0,1,0,0]) > 0:  # anchored, gene+TE
             transc_dict['anch_both'].append(scnt)
         else:
             transc_dict['tes'].append(scnt)
@@ -60,7 +63,7 @@ def summer(cnt_list, blank):
 
 
 def count_reads(gene_blank, te_blank, cbc_dict, nodelist):
-    category = np.zeros(6)
+    category = np.zeros(len(UMI_CATEGORIES))
     anchored = []
     equiv_classes = {}
 
@@ -109,7 +112,7 @@ def count_reads(gene_blank, te_blank, cbc_dict, nodelist):
 
         if tes:
             unmo_te_cnts = normalizelil(unmo_te_cnts)
-            if np.sum(unmo_gene_cnts.data) == 0:
+            if unmo_gene_cnts.nnz == 0:  # np.sum(lil.data) returns a list, which never equals 0
                 category[0] = 1
                 unmo_cnts = sparse.hstack((gene_blank, unmo_te_cnts))
             else:
@@ -120,7 +123,10 @@ def count_reads(gene_blank, te_blank, cbc_dict, nodelist):
             return {'cnt': unmo_cnts, 'cat': category}
 
         else:
-            category[2] = 1
+            if unmo_gene_cnts.nnz == 0:  # no alignment overlaps a gene or TE
+                category[6] = 1
+            else:
+                category[2] = 1
             unmo_gene_cnts = normalizelil(unmo_gene_cnts)
             return {'cnt': sparse.hstack((unmo_gene_cnts, te_blank)), 'cat': category}
 
@@ -217,7 +223,7 @@ def count_cells(full_dict, gene_blank, te_blank, num_processes):
     checker = False
 
     new_cbclist = []
-    full_sum = np.zeros(6)
+    full_sum = np.zeros(len(UMI_CATEGORIES))
     matrices = []
 
     full_results.sort(key=lambda x: x[0])
