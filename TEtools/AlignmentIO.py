@@ -1,4 +1,26 @@
+import shlex
+
 import pysam
+
+
+def validate_alignment(filename, allow_truncated=False):
+    """Catch the STAR setting that makes a multimapper look uniquely aligned."""
+    with pysam.AlignmentFile(filename, check_sq=False) as bam:
+        for program in bam.header.to_dict().get('PG', []):
+            if program.get('PN') != 'STAR':
+                continue
+            tokens = shlex.split(program.get('CL', ''))
+            def option(name, default):
+                return int(tokens[tokens.index(name) + 1]) if name in tokens else default
+            reported = option('--outSAMmultNmax', -1)
+            permitted = option('--outFilterMultimapNmax', 10)
+            if 0 < reported < permitted and not allow_truncated:
+                raise ValueError(
+                    'STAR BAM has truncated multimapping alignments '
+                    '(--outSAMmultNmax %s, --outFilterMultimapNmax %s). '
+                    'Realign FASTQs with --outSAMmultNmax -1. '
+                    'The missing alignments cannot be recovered from this BAM. '
+                    '--allow-truncated-bam is for diagnostic comparisons only.' % (reported, permitted))
 
 
 def annotation_direction(stranded, read_is_reverse):
