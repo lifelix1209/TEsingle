@@ -205,23 +205,20 @@ def count_umis(cell_dict, gene_blank, te_blank):
 def count_cells(full_dict, gene_blank, te_blank, num_processes):
     cbclist = list(full_dict.keys())
 
-    mp.set_start_method('spawn')
-
-    pool = mp.Pool(num_processes)
-
-    tbl_list = [(cbc, pool.apply_async(count_umis, args=(full_dict[cbc], gene_blank, te_blank))) for cbc in cbclist]
-    del full_dict
-    full_results = [(cbc, n.get()) for (cbc, n) in tbl_list]
-
-    pool.close()
-    pool.join()
+    if num_processes == 1:
+        full_results = [(cbc, count_umis(full_dict.pop(cbc), gene_blank, te_blank)) for cbc in cbclist]
+    else:
+        with mp.get_context('spawn').Pool(num_processes) as pool:
+            tbl_list = [(cbc, pool.apply_async(count_umis, args=(full_dict[cbc], gene_blank, te_blank))) for cbc in cbclist]
+            del full_dict
+            full_results = [(cbc, n.get()) for (cbc, n) in tbl_list]
 
     print('count_umis finishing at:  ', time.ctime(), flush=True)
     checker = False
 
     new_cbclist = []
     full_sum = np.zeros(6)
-    tblstack = False
+    matrices = []
 
     full_results.sort(key=lambda x: x[0])
 
@@ -231,11 +228,8 @@ def count_cells(full_dict, gene_blank, te_blank, num_processes):
         new_cbclist.append(cbc)
         full_sum += cat_sum
 
-        if not checker:
-            tblstack = cell_cnt
-            checker = True
-        else:
-            tblstack = sparse.vstack([tblstack, cell_cnt])
+        matrices.append(cell_cnt)
+    tblstack = sparse.vstack(matrices, format='csr')
 
     print('count_cells finishing at:  ', time.ctime(), flush=True)
     return tblstack, new_cbclist, full_sum
